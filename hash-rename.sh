@@ -65,23 +65,23 @@ extname()
 
 # Rename a file
 # $1:   path
-# $2:   opts
+# $2:   format string
+# $3:   hash algorithm
 rename_file()
 {
     local path=`realpath "$1"`
-    local -A opts=("${!2}")
-    echo "rename_file: ${opts[format]}"
-
     local dirname=`dirname "$path"`
     local basename=`basename "$path"`
     local extname=`extname "$path"`
+    local format="$2"
+    local hash_algorithm="$3"
     # Get hash value
-    local hash=`hashsum "$path" "${opts[hash]}"`
+    local hash=`hashsum "$path" "$hash_algorithm"`
     if [[ $? -ne 0 ]]; then
-        echo "Failed to get ${opts[hash]}sum of $path" 1>&2
+        echo "Failed to get ${hash_algorithm}sum of $path" 1>&2
         return 1
     fi
-    local name=`gen_name "${opts[format]}" "$hash" "$extname"`
+    local name=`gen_name "$format" "$hash" "$extname"`
     if [[ "$name" == "$basename" ]]; then
         echo "Skip file, already renamed: $path"
         return 0
@@ -97,7 +97,7 @@ rename_file()
     else
         local -i seq=1
         while [[ -e "$target" ]]; do
-            name=`gen_name "${opts[format]}" "${hash}-${seq}" "$extname"`
+            name=`gen_name "$format" "${hash}-${seq}" "$extname"`
             target=`path_join "$dirname" "$name"`
             seq+=1
         done
@@ -108,15 +108,19 @@ rename_file()
 
 
 # Rename a directory
-# $1:   path
-# $2:   pattern
-# $3:   opts
+# $1:   Directory path
+# $2:   The pattern used to search for files to be renamed
+# $3:   Format string
+# $4:   Hash algorithm
+# $5:   Recursive
+# $6:   Options
 rename_dir()
 {
     local path="$1"
     local pattern="$2"
-    local opts=${!3}
-    echo "rename_dir: ${opts[hash]}"
+    local format="$3"
+    local hash_algorithm="$4"
+    local recursive="$5"
 
     if [[ ! -e "$path" ]]; then
         echo "No such directory: $path" 1>&2
@@ -127,11 +131,11 @@ rename_dir()
         return 2
     fi
 
-    local options=""
-    [[ "${opts[recursive]}" != "true" ]] && options="${options} -maxdepth 1"
+    local options="$6"
+    [[ "$recursive" != "true" ]] && options="${options} -maxdepth 1"
     [[ -n "$pattern" ]] && options="${options} -name '$pattern'"
-    find "$path" "$options" -type f | while read item; do
-        rename_file "$item" opts[@]
+    find "$path" $options -type f | while read item; do
+        rename_file "$item" "$format" "$hash_algorithm"
     done
     return 0
 }
@@ -220,7 +224,7 @@ main()
     path="$1"
     [[ -n "$2" ]] && pattern="$2"
     # Rename files under directory
-    rename_dir "$path" "$pattern" opts[@]
+    rename_dir "$path" "$pattern" "${opts[format]}" "${opts[hash]}" "${opts[recursive]}"
     exit $?
 }
 
