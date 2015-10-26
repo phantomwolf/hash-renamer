@@ -92,6 +92,7 @@ rename_file()
         echo "Skipped $path"
         return 0
     fi
+    name=`gen_name "$format" "$hash" "$extname"`
     local target=`path_join "$dirname" "$name"`
     if [[ "$overwrite" == "true" ]]; then
         if [[ -f "$target" ]]; then
@@ -103,7 +104,7 @@ rename_file()
     else
         local -i seq=1
         while [[ -e "$target" ]]; do
-            name=`gen_name "$format" "${hash}-${seq}" "$extname"`
+            name=`gen_name "$format" "$hash" "$extname" "$seq"`
             target=`path_join "$dirname" "$name"`
             seq+=1
         done
