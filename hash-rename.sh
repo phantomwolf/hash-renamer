@@ -17,12 +17,14 @@ hashsum()
 # $1:       format string
 # $2:       hash value
 # $3:       extname
+# $4:       sequence num
 # output:   file name
 # return:   exitstatus of sed
 gen_name()
 {
     local name=`echo "$1" | sed -e "s/%h/${2}/g" 2> /dev/null`
     local exitstatus=$?
+    [[ -n "$4" ]] && name="${name}-$4"
     [[ -n "$3" ]] && name="${name}.$3"
     echo "$name"
     return $exitstatus
@@ -67,6 +69,7 @@ extname()
 # $1:   path
 # $2:   format string
 # $3:   hash algorithm
+# $4:   overwrite existing files
 rename_file()
 {
     local path=`realpath "$1"`
@@ -75,15 +78,18 @@ rename_file()
     local extname=`extname "$path"`
     local format="$2"
     local hash_algorithm="$3"
+    local overwrite="$4"
     # Get hash value
     local hash=`hashsum "$path" "$hash_algorithm"`
     if [[ $? -ne 0 ]]; then
         echo "Failed to get ${hash_algorithm}sum of $path" 1>&2
         return 1
     fi
-    local name=`gen_name "$format" "$hash" "$extname"`
-    if [[ "$name" == "$basename" ]]; then
-        echo "Skip file, already renamed: $path"
+    # Check if the file has already been renamed
+    local name=`gen_name "$format" "$hash"`
+    if [[ "$basename" == "${name}.${extname}" ]] ||
+        [[ -n `echo "$basename" | grep -P "^${name}-\\d+\\.${extname}$"` ]]; then
+        echo "Skipped $path"
         return 0
     fi
     local target=`path_join "$dirname" "$name"`
@@ -113,7 +119,8 @@ rename_file()
 # $3:   Format string
 # $4:   Hash algorithm
 # $5:   Recursive
-# $6:   Options
+# $6:   Overwrite
+# $7:   Options for 'find'
 rename_dir()
 {
     local path="$1"
@@ -121,6 +128,8 @@ rename_dir()
     local format="$3"
     local hash_algorithm="$4"
     local recursive="$5"
+    local overwrite="$6"
+    local options="$7"
 
     if [[ ! -e "$path" ]]; then
         echo "No such directory: $path" 1>&2
@@ -131,11 +140,13 @@ rename_dir()
         return 2
     fi
 
-    local options="$6"
-    [[ "$recursive" != "true" ]] && options="${options} -maxdepth 1"
-    [[ -n "$pattern" ]] && options="${options} -name '$pattern'"
-    find "$path" $options -type f | while read item; do
-        rename_file "$item" "$format" "$hash_algorithm"
+    local cmd="find '$path'"
+    [[ -n "$options" ]] && cmd="$cmd $options"
+    [[ "$recursive" != "true" ]] && cmd="$cmd -maxdepth 1"
+    [[ -n "$pattern" ]] && cmd="$cmd -name '$pattern'"
+    cmd="$cmd -type f"
+    eval "$cmd" | while read item; do
+        rename_file "$item" "$format" "$hash_algorithm" "$overwrite"
     done
     return 0
 }
@@ -151,11 +162,11 @@ Arguments:
     pattern                 Pattern to filter files
 
 Options:
-    -o, --overwrite         Overwrite existing files
+    -k, --keep              Do not overwrite existing files
     -f, --format            Format string for file name(%h is interpreted to file hash value)
     -h, --hash              Hash algorithm(supported: sha1, sha224, sha256, sha384, sha512, md5, ck)
                             default: sha1
-    -r, --recursive         Also rename files in sub directories
+    -n, --non-recursive     Do not rename files in sub directories
     --help                  Print usage info
 END
 }
@@ -170,11 +181,11 @@ main()
     # Default settings
     opts[hash]="sha1"
     opts[format]="%h"
-    opts[overwrite]="false"
+    opts[overwrite]="true"
     opts[recursive]="true"
     
     local ARGS
-    ARGS=$(getopt -l hash:,format:,recursive,overwrite,help -o h:,f:,r,o -- "$@")
+    ARGS=$(getopt -l hash:,format:,non-recursive,keep,help -o h:,f:,n,k -- "$@")
     eval set -- "${ARGS}"
     while true; do
         case "$1" in
@@ -195,12 +206,12 @@ main()
                 fi
                 shift 2
                 ;;
-            -r|--recursive)
-                opts[recursive]="true"
+            -n|--non-recursive)
+                opts[recursive]="false"
                 shift 1
                 ;;
-            -o|--overwrite)
-                opts[overwrite]="true"
+            -k|--keep)
+                opts[overwrite]="false"
                 shift 1
                 ;;
             --)
@@ -224,7 +235,7 @@ main()
     path="$1"
     [[ -n "$2" ]] && pattern="$2"
     # Rename files under directory
-    rename_dir "$path" "$pattern" "${opts[format]}" "${opts[hash]}" "${opts[recursive]}"
+    rename_dir "$path" "$pattern" "${opts[format]}" "${opts[hash]}" "${opts[recursive]}" "${opts[overwrite]}"
     exit $?
 }
 
