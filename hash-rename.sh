@@ -94,20 +94,22 @@ rename_file()
     fi
     name=`gen_name "$format" "$hash" "$extname"`
     local target=`path_join "$dirname" "$name"`
-    if [[ "$overwrite" == "true" ]]; then
-        if [[ -f "$target" ]]; then
-            rm -f "$target"
+    if [[ -e "$target" ]]; then
+        if [[ "$overwrite" == "true" ]]; then
+            if [[ -f "$target" ]]; then
+                rm -f "$target"
+            else
+                echo "Overwrite failed. Not a regular file: $target" 1>&2
+                return 2
+            fi
         else
-            echo "Overwrite failed. Not a regular file: $target" 1>&2
-            return 2
+            local -i seq=1
+            while [[ -e "$target" ]]; do
+                name=`gen_name "$format" "$hash" "$extname" "$seq"`
+                target=`path_join "$dirname" "$name"`
+                seq+=1
+            done
         fi
-    else
-        local -i seq=1
-        while [[ -e "$target" ]]; do
-            name=`gen_name "$format" "$hash" "$extname" "$seq"`
-            target=`path_join "$dirname" "$name"`
-            seq+=1
-        done
     fi
     mv "$path" "$target"
     return $?
